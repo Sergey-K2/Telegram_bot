@@ -4,19 +4,5 @@ class ResponseIsnt200Error(Exception):
     pass
 
 
-class HomeworksWasntFoundError(Exception):
-    """Домашних работ не найдено."""
-
-    pass
 
 
-class StatusUnknownError(Exception):
-    """Статус домашней работы не известен."""
-
-    pass
-
-
-class APIKeyError(KeyError):
-    """В ответе API нет ключа homeworks."""
-
-    pass
