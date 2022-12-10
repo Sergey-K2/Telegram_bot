@@ -67,9 +67,9 @@ def get_api_answer(current_timestamp):
     if response.status_code != 200:
         raise exceptions.ResponseIsnt200Error(
             f"Ответ сервера не 200."
-            "Получен ответ {response.status_code}. Параметры запроса: {ENDPOINT},"
-            "{headers}, {params}. Сообщение сервера:"
-            "{response_content.get('message')}"
+            f"Получен ответ {response.status_code}. Параметры запроса:"
+            f"{ENDPOINT}, {HEADERS}, {current_timestamp}. Сообщение сервера:"
+            f"{response.get('message')}"
         )
     return response.json()
 
