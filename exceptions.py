@@ -4,5 +4,13 @@ class ResponseIsnt200Error(Exception):
     pass
 
 
+class SomethingWrongWithRequestError(Exception):
+    """Ошибка запроса"""
+
+    pass
 
 
+class ResponseIsntDictionaryError(TypeError):
+    """Ошибка запроса"""
+
+    pass
