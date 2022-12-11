@@ -37,12 +37,12 @@ SENDING_ERROR_MESSAGE = (
     "Сообщение {message} в Телеграм не отправлено. Произошла ошибка {error}"
 )
 REQUESTS_PROBLEMS_MESSAGE = (
-    "Ошибка запроса. Параметры запроса: {url}, {headers}, {params}."
+    "Ошибка запроса {error}. Параметры запроса: {url}, {headers}, {params}."
 )
 RESPONSE_ISNT_200_MESSAGE = (
     "Ответ сервера не 200."
     "Получен ответ {status_code}. Параметры запроса:"
-    "{endpoint}, {headers}, {current_timestamp}. Сообщение сервера:"
+    "{url}, {headers}, {params}. Сообщение сервера:"
     "{message}."
 )
 HOMEWORK_KEY_ERROR_MESSAGE = 'Нет ключа "homework_name"'
@@ -50,8 +50,8 @@ STATUS_KEY_ERROR_MESSAGE = 'Не удалось получить статус п
 UNKNOWN_STATUS = "Проучен неихвестный статус: {status}"
 ERROR_MESSAGE_IN_MAIN = "Сбой в работе программы: {error}"
 ERRORS_IN_API_RESPONSE = (
-    "В ответе API обнаружились ошибки. Параметры запроса: {url}, {headers},"
-    "{params}. Ключ: {key}."
+    "В ответе API обнаружились ошибка: {error}. Параметры запроса: {url},"
+    "{headers}, {params}. Ключ: {key}."
 )
 RESPONSE_ISNT_DICTIOANARY_MESSAGE = (
     "В ответе API вместо словаря получен {type}"
@@ -94,16 +94,17 @@ def get_api_answer(current_timestamp):
 
     try:
         response = requests.get(**request_data)
-    except requests.exceptions.RequestException:
-        raise exceptions.RequestError(
-            REQUESTS_PROBLEMS_MESSAGE.format(**request_data)
+    except requests.exceptions.RequestException as error:
+        raise ConnectionError(
+            REQUESTS_PROBLEMS_MESSAGE.format(error=error, **request_data)
         )
 
     if response.status_code != 200:
         raise exceptions.ResponseIsnt200Error(
             RESPONSE_ISNT_200_MESSAGE.format(
                 status_code=response.status_code,
-                message=response.get("message") ** request_data,
+                message=response.get("message"),
+                **request_data,
             )
         )
     api_response = response.json()
@@ -112,7 +113,8 @@ def get_api_answer(current_timestamp):
         if key in api_response:
             raise Exception(
                 ERRORS_IN_API_RESPONSE.format(
-                    key=api_response.get(key),
+                    key=key,
+                    error=api_response.get(key),
                     **request_data,
                 )
             )
