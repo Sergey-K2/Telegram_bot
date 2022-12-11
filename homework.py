@@ -94,8 +94,8 @@ def get_api_answer(current_timestamp):
         )
 
     if (
-        response.json().get("code") != None
-        or response.json().get("error") != None
+        response.json().get("code") is not None
+        or response.json().get("error") is not None
     ):
         return (
             f'Ошибки в ответе сервера: {response.json().get("error")},'
