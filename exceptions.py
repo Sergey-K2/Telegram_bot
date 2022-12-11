@@ -3,4 +3,9 @@ class ResponseIsnt200Error(Exception):
 
     pass
 
+class RequestError(Exception):
+    """Ошибка запроса."""
+
+    pass
+
 

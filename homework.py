@@ -33,14 +33,17 @@ STATUS_CHANGED_MESSAGE = (
     'Изменился статус проверки работы "{homework_name}". {verdict}'
 )
 SUCCESSFUL_SENDING_MESSAGE = "Сообщение в Telegram отправлено: {message}"
+SENDING_ERROR_MESSAGE = (
+    "Сообщение {message} в Телеграм не отправлено. Произошла ошибка {error}"
+)
 REQUESTS_PROBLEMS_MESSAGE = (
-    "Ошибка запроса. Параметры запроса: {ENDPOINT}, {headers}, {params}."
+    "Ошибка запроса. Параметры запроса: {url}, {headers}, {params}."
 )
 RESPONSE_ISNT_200_MESSAGE = (
     "Ответ сервера не 200."
     "Получен ответ {status_code}. Параметры запроса:"
     "{endpoint}, {headers}, {current_timestamp}. Сообщение сервера:"
-    '{response.get("message")}'
+    "{message}."
 )
 HOMEWORK_KEY_ERROR_MESSAGE = 'Нет ключа "homework_name"'
 STATUS_KEY_ERROR_MESSAGE = 'Не удалось получить статус по ключу "status"'
@@ -72,42 +75,45 @@ def send_message(bot, message):
     try:
         bot.send_message(TELEGRAM_CHAT_ID, message)
         logger.debug(SUCCESSFUL_SENDING_MESSAGE.format(message=message))
+        return True
     except telegram.TelegramError as error:
         logger.error(
-            f"Сообщение в Телеграм не отправлено." f"Произошла ошибка {error}",
+            SENDING_ERROR_MESSAGE.format(message=message, error=error),
             exc_info=True,
         )
+        return False
 
 
 def get_api_answer(current_timestamp):
     """Делаем запрос к API."""
-    rq_pars = dict(
-        endpoint=ENDPOINT,
+    request_data = dict(
+        url=ENDPOINT,
         headers=HEADERS,
         params={"from_date": current_timestamp},
     )
 
     try:
-        response = requests.get(**rq_pars)
+        response = requests.get(**request_data)
     except requests.exceptions.RequestException:
-        raise requests.exceptions.RequestException(
-            REQUESTS_PROBLEMS_MESSAGE.format(**rq_pars)
+        raise exceptions.RequestError(
+            REQUESTS_PROBLEMS_MESSAGE.format(**request_data)
         )
 
     if response.status_code != 200:
         raise exceptions.ResponseIsnt200Error(
             RESPONSE_ISNT_200_MESSAGE.format(
-                status_code=response.status_code, **rq_pars
+                status_code=response.status_code,
+                message=response.get("message") ** request_data,
             )
         )
     api_response = response.json()
     keys = ("code", "error")
     for key in keys:
-        if key in api_response.keys():
+        if key in api_response:
             raise Exception(
                 ERRORS_IN_API_RESPONSE.format(
-                    key=key,
-                    **rq_pars,
+                    key=api_response.get(key),
+                    **request_data,
                 )
             )
         return api_response
@@ -167,14 +173,15 @@ def main():
             response = get_api_answer(current_timestamp)
             homeworks = check_response(response)
             status = parse_status(homeworks[0])
-            send_message(bot, status)
+            if send_message(bot, status):
+                current_timestamp = response.get(
+                    "current_date", current_timestamp
+                )
 
         except Exception as error:
-            send_message(bot, ERROR_MESSAGE_IN_MAIN.format(error=error))
-            logger.error(ERROR_MESSAGE_IN_MAIN.format(error=error))
-
-        else:
-            current_timestamp = response.get("current_date", current_timestamp)
+            message = ERROR_MESSAGE_IN_MAIN.format(error=error)
+            send_message(bot, message)
+            logger.error(message)
 
         finally:
             time.sleep(RETRY_PERIOD)
