@@ -4,9 +4,10 @@ import os
 import sys
 import time
 
-import requests
 from dotenv import load_dotenv
 import telegram
+import requests
+
 import exceptions
 
 load_dotenv()
@@ -17,7 +18,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 RETRY_PERIOD = 600
 ENDPOINT = "https://practicum.yandex.ru/api/user_api/homework_statuses/"
-HEADERS = {"Authorization": f"{PRACTICUM_TOKEN}"}
+HEADERS = {"Authorization": f"OAuth {PRACTICUM_TOKEN}"}
 
 # Pytest просит назвать именно HOMEWORK_VERDICTS
 HOMEWORK_VERDICTS = {
@@ -26,12 +27,14 @@ HOMEWORK_VERDICTS = {
     "rejected": "Работа проверена: у ревьюера есть замечания.",
 }
 
+TOKENS = ("PRACTICUM_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_TOKEN")
+
 STATUS_CHANGED_MESSAGE = (
     'Изменился статус проверки работы "{homework_name}". {verdict}'
 )
 SUCCESSFUL_SENDING_MESSAGE = "Сообщение в Telegram отправлено: {message}"
 REQUESTS_PROBLEMS_MESSAGE = (
-    "Ошибка запроса. Параметры запроса: {endpoint}," "{headers}, {params}."
+    "Ошибка запроса. Параметры запроса: {ENDPOINT}, {headers}, {params}."
 )
 RESPONSE_ISNT_200_MESSAGE = (
     "Ответ сервера не 200."
@@ -43,6 +46,16 @@ HOMEWORK_KEY_ERROR_MESSAGE = 'Нет ключа "homework_name"'
 STATUS_KEY_ERROR_MESSAGE = 'Не удалось получить статус по ключу "status"'
 UNKNOWN_STATUS = "Проучен неихвестный статус: {status}"
 ERROR_MESSAGE_IN_MAIN = "Сбой в работе программы: {error}"
+ERRORS_IN_API_RESPONSE = (
+    "В ответе API обнаружились ошибки. Параметры запроса: {url}, {headers},"
+    "{params}. Ключ: {key}."
+)
+RESPONSE_ISNT_DICTIOANARY_MESSAGE = (
+    "В ответе API вместо словаря получен {type}"
+)
+NO_HOMEWORK_KEY_MESSAGE = 'Нет ключа "homeworks"'
+VALUE_ISNT_LIST_MESSAGE = 'Значение по ключу "homework" не список, а {type}'
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -68,55 +81,49 @@ def send_message(bot, message):
 
 def get_api_answer(current_timestamp):
     """Делаем запрос к API."""
-    request_data = {
-        "headers": HEADERS,
-        "params": {"from_date": current_timestamp},
-    }
+    rq_pars = dict(
+        endpoint=ENDPOINT,
+        headers=HEADERS,
+        params={"from_date": current_timestamp},
+    )
+
     try:
-        response = requests.get(ENDPOINT, **request_data)
-    except Exception:
-        raise exceptions.SomethingWrongWithRequestError(
-            REQUESTS_PROBLEMS_MESSAGE.format(
-                endpoint=ENDPOINT,
-                headers=request_data.get("headers"),
-                params=request_data.get["params"],
-            )
+        response = requests.get(**rq_pars)
+    except requests.exceptions.RequestException:
+        raise requests.exceptions.RequestException(
+            REQUESTS_PROBLEMS_MESSAGE.format(**rq_pars)
         )
 
     if response.status_code != 200:
         raise exceptions.ResponseIsnt200Error(
             RESPONSE_ISNT_200_MESSAGE.format(
-                status_code=response.status_code,
-                endpoint=ENDPOINT,
-                headers=HEADERS,
-                current_timestamp=current_timestamp,
+                status_code=response.status_code, **rq_pars
             )
         )
-
-    if (
-        response.json().get("code") is not None
-        or response.json().get("error") is not None
-    ):
-        return (
-            f'Ошибки в ответе сервера: {response.json().get("error")},'
-            f'{response.json().get("code")}'
-        )
-    return response.json()
+    api_response = response.json()
+    keys = ("code", "error")
+    for key in keys:
+        if key in api_response.keys():
+            raise Exception(
+                ERRORS_IN_API_RESPONSE.format(
+                    key=key,
+                    **rq_pars,
+                )
+            )
+        return api_response
 
 
 def check_response(response):
     """Проверяем ответ API."""
     if not isinstance(response, dict):
-        raise exceptions.ResponseIsntDictionaryError
-    try:
-        homeworks = response.get("homeworks")
-    except KeyError:
-        raise KeyError("Нет ключа 'homeworks'")
-
-    if not isinstance(homeworks, list):
         raise TypeError(
-            f"По ключу 'homeworks' получен объект формата" f"{type(homeworks)}"
+            RESPONSE_ISNT_DICTIOANARY_MESSAGE.format(type=type(response))
         )
+    if "homeworks" not in response.keys():
+        raise KeyError(NO_HOMEWORK_KEY_MESSAGE)
+    homeworks = response.get("homeworks")
+    if not isinstance(homeworks, list):
+        raise TypeError(VALUE_ISNT_LIST_MESSAGE.format(type=type(homeworks)))
     return homeworks
 
 
@@ -131,18 +138,16 @@ def parse_status(homework):
     except KeyError:
         raise KeyError(STATUS_KEY_ERROR_MESSAGE)
     if status not in HOMEWORK_VERDICTS.keys():
-        raise KeyError(UNKNOWN_STATUS.format(status=status))
-    verdict = HOMEWORK_VERDICTS.get(status)
+        raise ValueError(UNKNOWN_STATUS.format(status=status))
     return STATUS_CHANGED_MESSAGE.format(
-        homework_name=homework_name, verdict=verdict
+        homework_name=homework_name, verdict=HOMEWORK_VERDICTS.get(status)
     )
 
 
 def check_tokens():
     """Проверка доступности переменных окружения."""
-    tokens = ("PRACTICUM_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_TOKEN")
     token_flag = True
-    for token in tokens:
+    for token in TOKENS:
         if globals()[token] is None:
             logging.critical(f"Проверка токена {token} не пройдена")
             token_flag = False
@@ -163,11 +168,13 @@ def main():
             homeworks = check_response(response)
             status = parse_status(homeworks[0])
             send_message(bot, status)
-            current_timestamp = response.get("current_date", current_timestamp)
 
         except Exception as error:
             send_message(bot, ERROR_MESSAGE_IN_MAIN.format(error=error))
             logger.error(ERROR_MESSAGE_IN_MAIN.format(error=error))
+
+        else:
+            current_timestamp = response.get("current_date", current_timestamp)
 
         finally:
             time.sleep(RETRY_PERIOD)
